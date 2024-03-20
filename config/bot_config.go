@@ -57,6 +57,12 @@ func resolveBlogClient(conf map[string]interface{}) (blog.BlogClient, error) {
 		PostVisibility := resolveMapValue[string](conf, "post_visibility")
 		return blog.NewMastodonClient(origin, accessToken, PostVisibility), nil
 
+	case "ohagi":
+		origin := resolveMapValue[string](conf, "origin")
+		accessToken := resolveMapValue[string](conf, "access_token")
+		PostVisibility := resolveMapValue[string](conf, "post_visibility")
+		return blog.NewOhagiClient(origin, accessToken, PostVisibility), nil
+
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}
