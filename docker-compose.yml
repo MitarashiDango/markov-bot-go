@@ -4,6 +4,7 @@ services:
     build: '.'
     volumes:
       - './.cache:/app/.cache'
+      - './config.yaml:/app/config.yaml'
     environment:
       - FETCH_STATUS_COUNT
       - STATE_SIZE
