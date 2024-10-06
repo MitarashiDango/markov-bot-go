@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/paralleltree/markov-bot-go/blog"
@@ -10,11 +11,36 @@ import (
 	"github.com/paralleltree/markov-bot-go/persistence"
 )
 
-func BuildChain(client blog.BlogClient, analyzer morpheme.MorphemeAnalyzer, fetchStatusCount int, stateSize int, store persistence.PersistentStore) error {
-	chain := markov.NewChain(stateSize)
-	iterator := lib.BuildIterator(client.GetPostsFetcher())
+type buildChainConf struct {
+	fetchStatusCount int
+	stateSize        int
+}
 
-	for i := 0; i < fetchStatusCount; i++ {
+func WithFetchStatusCount(fetchStatusCount int) func(c *buildChainConf) {
+	return func(c *buildChainConf) {
+		c.fetchStatusCount = fetchStatusCount
+	}
+}
+
+func WithStateSize(stateSize int) func(c *buildChainConf) {
+	return func(c *buildChainConf) {
+		c.stateSize = stateSize
+	}
+}
+
+func BuildChain(ctx context.Context, client blog.BlogClient, analyzer morpheme.MorphemeAnalyzer, store persistence.PersistentStore, optFns ...func(*buildChainConf)) error {
+	conf := &buildChainConf{
+		fetchStatusCount: 100,
+		stateSize:        2,
+	}
+	for _, f := range optFns {
+		f(conf)
+	}
+
+	chain := markov.NewChain(conf.stateSize)
+	iterator := lib.BuildIterator(client.GetPostsFetcher(ctx))
+
+	for i := 0; i < conf.fetchStatusCount; i++ {
 		status, hasNext, err := iterator()
 		if err != nil {
 			return fmt.Errorf("fetch statuses: %w", err)
@@ -36,7 +62,7 @@ func BuildChain(client blog.BlogClient, analyzer morpheme.MorphemeAnalyzer, fetc
 	if err != nil {
 		return fmt.Errorf("dump chain: %w", err)
 	}
-	if err := store.Save(dump); err != nil {
+	if err := store.Save(ctx, dump); err != nil {
 		return fmt.Errorf("save chain: %w", err)
 	}
 

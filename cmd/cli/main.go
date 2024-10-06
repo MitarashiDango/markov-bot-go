@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"os"
 	"time"
 
@@ -21,14 +20,12 @@ const (
 	ModelFileKey        = "model-file"
 	StateSizeKey        = "state-size"
 	FetchStatusCountKey = "fetch-status-count"
-	MinWordsCount       = "min-words-count"
+	MinWordsCountKey    = "min-words-count"
 	ExpiresInKey        = "expires-in"
 	DryRunKey           = "dry-run"
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	configFileFlag := &cli.StringFlag{
 		Name:  ConfigFileKey,
 		Usage: "Load configuration from `FILE`. If command-line arguments or environment variables are set, they override the configuration file.",
@@ -61,7 +58,7 @@ func main() {
 			EnvVars: []string{"DRY_RUN"},
 		},
 		&cli.IntFlag{
-			Name:    MinWordsCount,
+			Name:    MinWordsCountKey,
 			Usage:   "specifies the minimum number of words",
 			EnvVars: []string{"MIN_WORDS_COUNT"},
 			Value:   1,
@@ -94,7 +91,7 @@ func main() {
 						return fmt.Errorf("load config: %w", err)
 					}
 					overrideChainConfigFromCli(&conf.ChainConfig, c)
-					return handler.BuildChain(conf.FetchClient, analyzer, conf.FetchStatusCount, conf.StateSize, store)
+					return handler.BuildChain(c.Context, conf.FetchClient, analyzer, store, handler.WithFetchStatusCount(conf.FetchStatusCount), handler.WithStateSize(conf.StateSize))
 				},
 			},
 			{
@@ -111,7 +108,7 @@ func main() {
 					if c.Bool(DryRunKey) {
 						conf.PostClient = blog.NewStdIOClient()
 					}
-					return handler.GenerateAndPost(conf.PostClient, store, conf.MinWordsCount)
+					return handler.GenerateAndPost(c.Context, conf.PostClient, store, handler.WithMinWordsCount(conf.MinWordsCount))
 				},
 			},
 			{
@@ -128,16 +125,31 @@ func main() {
 					if c.Bool(DryRunKey) {
 						conf.PostClient = blog.NewStdIOClient()
 					}
-					mod, ok, err := store.ModTime()
+					mod, ok, err := store.ModTime(c.Context)
 					if err != nil {
 						return fmt.Errorf("get modtime: %w", err)
 					}
-					if !ok || float64(conf.ExpiresIn) < time.Since(mod).Seconds() {
-						if err := handler.BuildChain(conf.FetchClient, analyzer, conf.FetchStatusCount, conf.StateSize, store); err != nil {
+
+					buildChain := func() error {
+						return handler.BuildChain(c.Context, conf.FetchClient, analyzer, store, handler.WithFetchStatusCount(conf.FetchStatusCount), handler.WithStateSize(conf.StateSize))
+					}
+
+					if !ok {
+						// return an error if initial build fails
+						if err := buildChain(); err != nil {
 							return fmt.Errorf("build chain: %w", err)
 						}
 					}
-					return handler.GenerateAndPost(conf.PostClient, store, conf.MinWordsCount)
+
+					if float64(conf.ExpiresIn) < time.Since(mod).Seconds() {
+						// attempt to build chain if expired
+						// when building chain fails, it will use the existing chain
+						if err := buildChain(); err != nil {
+							fmt.Fprintf(os.Stderr, "build chain: %v\n", err)
+						}
+					}
+
+					return handler.GenerateAndPost(c.Context, conf.PostClient, store, handler.WithMinWordsCount(conf.MinWordsCount))
 				},
 			},
 		},
@@ -159,8 +171,8 @@ func overrideChainConfigFromCli(conf *config.ChainConfig, c *cli.Context) {
 	if c.IsSet(ExpiresInKey) {
 		conf.ExpiresIn = c.Int(ExpiresInKey)
 	}
-	if c.IsSet(MinWordsCount) {
-		conf.MinWordsCount = c.Int(MinWordsCount)
+	if c.IsSet(MinWordsCountKey) {
+		conf.MinWordsCount = c.Int(MinWordsCountKey)
 	}
 }
 

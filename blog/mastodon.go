@@ -1,8 +1,10 @@
 package blog
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -37,12 +39,12 @@ func NewMastodonClient(origin, accessToken string, postVisibility string) BlogCl
 	}
 }
 
-func (c *MastodonClient) GetPostsFetcher() lib.ChunkIteratorFunc[string] {
+func (c *MastodonClient) GetPostsFetcher(ctx context.Context) lib.ChunkIteratorFunc[string] {
 	userId := ""
 	maxId := ""
 	return func() ([]string, bool, error) {
 		if userId == "" {
-			gotUserId, err := c.FetchUserId()
+			gotUserId, err := c.FetchUserId(ctx)
 			if err != nil {
 				return nil, false, fmt.Errorf("fetch user id: %w", err)
 			}
@@ -50,7 +52,7 @@ func (c *MastodonClient) GetPostsFetcher() lib.ChunkIteratorFunc[string] {
 		}
 
 		chunkSize := 100
-		statuses, hasNext, nextMaxId, err := c.fetchPublicStatusesChunk(userId, chunkSize, maxId)
+		statuses, hasNext, nextMaxId, err := c.fetchPublicStatusesChunk(ctx, userId, chunkSize, maxId)
 		if err != nil {
 			return nil, false, fmt.Errorf("fetch public statuses: %w", err)
 		}
@@ -61,13 +63,13 @@ func (c *MastodonClient) GetPostsFetcher() lib.ChunkIteratorFunc[string] {
 
 // Returns status slice and minimum status id to fetch next older statuses.
 // This function may returns statuses lesser than specified count because this exlcludes private and direct visibility statuses.
-func (c *MastodonClient) fetchPublicStatusesChunk(userId string, count int, maxId string) ([]string, bool, string, error) {
+func (c *MastodonClient) fetchPublicStatusesChunk(ctx context.Context, userId string, count int, maxId string) ([]string, bool, string, error) {
 	url := c.buildUrl(fmt.Sprintf("/api/v1/accounts/%s/statuses?limit=%d&exclude_reblogs=1&exclude_replies=1", userId, count))
 	if maxId != "" {
 		url = fmt.Sprintf("%s&max_id=%s", url, maxId)
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, false, "", fmt.Errorf("create request: %w", err)
 	}
@@ -102,13 +104,14 @@ func (c *MastodonClient) fetchPublicStatusesChunk(userId string, count int, maxI
 			continue
 		}
 		// remove tags
-		result = append(result, tagPattern.ReplaceAllLiteralString(v.Content, ""))
+		body := html.UnescapeString(tagPattern.ReplaceAllLiteralString(v.Content, ""))
+		result = append(result, body)
 	}
 	return result, true, statuses[len(statuses)-1].Id, nil
 }
 
-func (c *MastodonClient) FetchUserId() (string, error) {
-	req, err := http.NewRequest("GET", c.buildUrl("/api/v1/accounts/verify_credentials"), nil)
+func (c *MastodonClient) FetchUserId(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.buildUrl("/api/v1/accounts/verify_credentials"), nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -134,13 +137,13 @@ func (c *MastodonClient) FetchUserId() (string, error) {
 }
 
 // Posts toot and returns created status id.
-func (c *MastodonClient) CreatePost(payload string) error {
+func (c *MastodonClient) CreatePost(ctx context.Context, payload string) error {
 	form := url.Values{}
 	form.Add("status", payload)
 	form.Add("visibility", c.PostVisibility)
 	body := strings.NewReader(form.Encode())
 
-	req, err := http.NewRequest("POST", c.buildUrl("/api/v1/statuses"), body)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.buildUrl("/api/v1/statuses"), body)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
