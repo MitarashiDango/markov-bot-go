@@ -2,6 +2,7 @@ package blog
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -38,20 +39,20 @@ func NewOhagiClient(origin, accessToken, postVisibility string) *OhagiClient {
 	}
 }
 
-func (c *OhagiClient) GetPostsFetcher() lib.ChunkIteratorFunc[string] {
+func (c *OhagiClient) GetPostsFetcher(ctx context.Context) lib.ChunkIteratorFunc[string] {
 	accountID := ""
 	paginationID := ""
 
 	return func() ([]string, bool, error) {
 		if accountID == "" {
-			id, err := c.fetchCredentialAccountID()
+			id, err := c.fetchCredentialAccountID(ctx)
 			if err != nil {
 				return nil, false, fmt.Errorf("fetch account id: %w", err)
 			}
 			accountID = id
 		}
 
-		posts, hasNext, nextPaginationID, err := c.fetchPosts(accountID, paginationID)
+		posts, hasNext, nextPaginationID, err := c.fetchPosts(ctx, accountID, paginationID)
 		if err != nil {
 			return nil, false, err
 		}
@@ -61,7 +62,7 @@ func (c *OhagiClient) GetPostsFetcher() lib.ChunkIteratorFunc[string] {
 	}
 }
 
-func (c *OhagiClient) CreatePost(payload string) error {
+func (c *OhagiClient) CreatePost(ctx context.Context, payload string) error {
 	post := &struct {
 		Text       string `json:"text"`
 		Visibility string `json:"visibility"`
@@ -80,7 +81,7 @@ func (c *OhagiClient) CreatePost(payload string) error {
 		return err
 	}
 
-	req, err := c.createRequest("POST", u.String(), bytes.NewReader(body))
+	req, err := c.createRequest(ctx, "POST", u.String(), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -99,7 +100,7 @@ func (c *OhagiClient) CreatePost(payload string) error {
 	return nil
 }
 
-func (c *OhagiClient) fetchPosts(accountID string, paginationID string) ([]string, bool, string, error) {
+func (c *OhagiClient) fetchPosts(ctx context.Context, accountID string, paginationID string) ([]string, bool, string, error) {
 	u, err := c.buildURL(fmt.Sprintf("/api/v1/accounts/%s/posts", accountID))
 	if err != nil {
 		return nil, false, "", err
@@ -114,7 +115,7 @@ func (c *OhagiClient) fetchPosts(accountID string, paginationID string) ([]strin
 	queries.Set("exclude_reblogs", "true")
 	u.RawQuery = queries.Encode()
 
-	req, err := c.createRequest("GET", u.String(), nil)
+	req, err := c.createRequest(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, false, "", err
 	}
@@ -159,13 +160,13 @@ func (c *OhagiClient) fetchPosts(accountID string, paginationID string) ([]strin
 	return result, true, posts[len(posts)-1].PaginationID, nil
 }
 
-func (c *OhagiClient) fetchCredentialAccountID() (string, error) {
+func (c *OhagiClient) fetchCredentialAccountID(ctx context.Context) (string, error) {
 	u, err := c.buildURL("/api/v1/session/credential_account")
 	if err != nil {
 		return "", err
 	}
 
-	req, err := c.createRequest("GET", u.String(), nil)
+	req, err := c.createRequest(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -192,8 +193,8 @@ func (c *OhagiClient) fetchCredentialAccountID() (string, error) {
 	return account.ID, nil
 }
 
-func (c *OhagiClient) createRequest(method string, apiEndpointURL string, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequest(method, apiEndpointURL, body)
+func (c *OhagiClient) createRequest(ctx context.Context, method string, apiEndpointURL string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, apiEndpointURL, body)
 	if err != nil {
 		return nil, err
 	}
