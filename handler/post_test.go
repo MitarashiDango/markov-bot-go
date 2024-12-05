@@ -86,3 +86,39 @@ func TestGenerateAndPost_ReturnsTextFromModel(t *testing.T) {
 		})
 	}
 }
+
+func TestReplaceMentionFormatString(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{
+			input:    "aaaaa@test@test2",
+			expected: "aaaaa@ test@ test2",
+		},
+		{
+			input:    "@test@test2 aaaaa",
+			expected: "@ test@ test2 aaaaa",
+		},
+		{
+			input:    "@@@",
+			expected: "@@@",
+		},
+		{
+			input:    "@@@aaaaaaaaaaaaa",
+			expected: "@@@ aaaaaaaaaaaaa",
+		},
+		{
+			input:    "@test aaaaa",
+			expected: "@ test aaaaa",
+		},
+	}
+
+	for i, tt := range cases {
+		actual := handler.Export_relpaceMentionFormatString(tt.input)
+		if tt.expected != actual {
+			t.Logf("index: %d, expected: %s, actual: %s", i, tt.expected, actual)
+			t.Fail()
+		}
+	}
+}

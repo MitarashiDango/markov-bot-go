@@ -1,0 +1,3 @@
+package handler
+
+var Export_relpaceMentionFormatString = relpaceMentionFormatString
