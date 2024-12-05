@@ -13,6 +13,8 @@ import (
 
 const maxAttemptsCount = 100
 
+var mentionFormatStringRegExp = regexp.MustCompile(`@(\w+)`)
+
 var ErrGenerationFailed = fmt.Errorf("failed to generate a post")
 
 type generatePostConf struct {
@@ -44,6 +46,9 @@ func GenerateAndPost(ctx context.Context, client blog.BlogClient, store persiste
 			continue
 		}
 		text := strings.Join(postprocessSentence(generated), "")
+
+		// メンションが送られることを防止するため、半角スペースを挿入する
+		text = relpaceMentionFormatString(text)
 
 		if err := client.CreatePost(ctx, text); err != nil {
 			return fmt.Errorf("create status: %w", err)
@@ -83,4 +88,8 @@ func postprocessSentence(input []string) []string {
 		result = append(result, word)
 	}
 	return result
+}
+
+func relpaceMentionFormatString(src string) string {
+	return mentionFormatStringRegExp.ReplaceAllString(src, "@ $1")
 }
