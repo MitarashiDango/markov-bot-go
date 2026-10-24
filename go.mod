@@ -1,8 +1,6 @@
 module github.com/paralleltree/markov-bot-go
 
-go 1.22
-
-toolchain go1.22.0
+go 1.27.3
 
 require (
 	github.com/aws/aws-lambda-go v1.32.0
